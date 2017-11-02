@@ -1,0 +1,181 @@
+% 以下の3行は変更しないこと．
+\documentclass[11pt]{jarticle}
+
+\usepackage [dvipdfmx] {graphicx}
+\usepackage {url}
+\usepackage {funinfosys}
+
+
+% ユーザが定義したマクロなどはここに置く．ただし学会誌のスタイルの
+% 再定義は原則として避けること．
+
+\begin{document}
+\author{%
+b1014223 高川雄平\\指導教員 : 松原克弥
+}
+
+\title{異種OS間でのコンテナ型仮想化のライブマイグレーションに関する研究}
+\etitle{A Study on Container Live Migration among Heterogeneous OS Platforms}
+\eauthor{Yuhei Takagawa}
+\abstract{オペレーティングシステム(OS)が提供する計算資源や名前空間をアプリケー
+ション毎に多重化して隔離することで，ひとつのOS上に独立した複数の実行環
+境を実現するコンテナ型仮想化が注目されている．一方，ハードウェア資源を
+仮想化する従来方式と比較して，コンテナ型仮想化の実現方式はOSへの依存度
+が高く，異なるOS上で実現されたコンテナ環境間では互換性がない．本研究では，
+仮想化技術のキラーアプリケーションであるクラウドコンピューティング環境
+において，負荷分散や可用性実現の要として広く利用されているライブマイグ
+レーション技術に着目して，動作中のコンテナ実行環境を異なる種類のOSが動
+作する別の計算機へ動的に移動して実行の継続を可能にする方式の検討と実装を行う．
+OS毎のシステムコールやABIの変換，プロセス実行状態の取得と復元方式の統
+一化，資源隔離機能の対応づけにより，LinuxとFreeBSDを対象とした異種OS間
+のライブマイグレーションでの実現を目的とする．}
+\keywords{コンテナ仮想化, ライブマイグレーション, FreeBSD, Linux}
+
+\eabstract{ The container-based virtualization, that multiplexes and isolates
+computing resource and name space which operating system (OS) provides
+for each application, has been recently attracted. As compared with
+the conventional hardware virtualization, containers run on different
+OSs may not be compatible because their container implementations must
+depend on each underlying OS. In this paper, we focus on the live
+migration since it is one of the most important technology for
+realizing load balancing and availability in cloud computing, that is
+a major application of the virtualization. For Linux and FreeBSD as
+the 1st target, we describe that how system calls and ABI can be
+converted, how running containers can be captured with an uniform
+representation and they restore in both OSs, and how an uniformed
+resource isolation can be realized.}
+
+\ekeywords{the container-based virtualization, live migration, FreeBSD, Linux}
+\maketitle
+\section{背景と目的}
+クラウドコンピューティングを支える技術として，仮想化技術がある．特に，アプリケーション毎の実行環境の軽量なコンパートメント化・ポータビリティを目的として，コンテナ型仮想化が注目されている\cite{focus-container}．コンテナ型仮想化は，OSが提供する資源を分離・制限し，他のOSを起動させずに異なる環境を構築できる軽量な仮想化を実現する．
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=14cm]{images/system4.png} \\
+  \caption{本提案システムの概要}
+  \label{fig:system}
+\end{figure*}
+
+また，クラウドコンピューティング実働環境では，負荷分散と可用性を実現するためにライブマ
+イグレーションが活用されている．ライブマイグレーションは，実行中のサービスを動的に別の
+マシンに移行する技術である．コンテナ型仮想化におけるライブマイグレーションも実現されて
+おり，LinuxではCRIU\cite{container_live,criu}，FreeBSDではFreeBSD VPS(Virtual Private
+ System)\cite{freebsd-vps}が実装として存在する．OS依存度が大きいコンテナ型仮想化では，
+ OSの計算資源やAPI，コンテナ実現方式が異なるため，異なるOS環境間でコンテナをマイグレー
+ ションすることができない．同一OS間のライブマイグレーションでは，システム全体の計算資
+ 源を活用することができず，メンテナンス時の可用性が損なわれてしまう．\\
+　本研究では稼働OSに依存したシステム運用で起きる上記のような問題を解決するために，異な
+るOS環境におけるコンテナ型仮想化実行環境のライブマイグレーションの実現を目的とする．
+
+\section{既存技術}
+\subsection{コンテナ型仮想化}
+\label{sec:container}
+
+コンテナ型仮想化は，計算資源や名前空間を分離することでアプリケーションごとに異なる環境
+を構築できる仮想化である．コンテナは分離されたアプリケーション実行環境のことである．コ
+ンテナの実現には，LinuxではcgroupsやNamespace，FreeBSDではJailという機能が利用されている\cite{cgroups-namespace}\cite{jail}．\\
+　cgroupsはLinuxのプロセスに対して使用する資源の制限を設けることができる機能である．例
+えば，CPU利用時間(CPU使用率)やメモリ利用量などを制限することができる．NamespaceはLinux
+のプロセスIDやディレクトリ，ネットワークなどを制御するための名前空間を分離できる機能で
+ある．\\
+　JailはNamespaceにあたる機能でFreeBSDのディレクトリやネットワークなどを制御するための
+名前空間を分離する機能である．分離した空間は他の空間のプロセスIDやディレクトリには直接
+関係しないため，同じプロセスIDを分離した空間ごとに利用することができる．
+
+\subsection{ライブマイグレーション}
+
+ライブマイグレーションは，仮想化環境上で動作しているプロセスを停止させずに仮想化環境ご
+と別のマシンに移動する技術で，負荷分散や可用性を目的に行われる．CPUやメモリなどのハード
+ウェア資源(以下，H/W資源)の状態をファイルに保存し転送，転送されたファイルからH/W資源の状
+態を復元することでライブマイグレーションは行われている\cite{yamada_survey_2016}．コンテ
+ナ型仮想化環境のライブマイグレーションではH/W資源の状態を全て保存されたファイルと保存す
+るための処理を「チェックポイント」と呼び，H/W資源の状態を復元することを「レストア」と呼
+ぶ．サービスを停止時間をゼロにすることはできず，チェックポイントの転送中は停止することに
+なる．停止時間はサービスに影響を与えない範囲にしなければならない．コンテナ・ライブマイグレーションを行うには，コンテナ内で動作しているプロセスのマイグレーションとコンテナの隔離・
+分離状態のマイグレーションが必要である．また，Linuxでライブマイグレーションを実現可能ｓなCRIU，FreeBSDでライブマイグレーションを実現したFreeBSD VPSが存在する．
+
+\subsection{CRIU}
+\label{sec:CRIU}
+CRIU(Checkpoint/Restore in Userspace)は，Linux上でコンテナ・マイグレーションを可能にするOSSである．CRIUの機能は主にプロセスのチェックポイントを作成することとプロセスのレストアを行うことである．ライブマイグレーションを行うマシンには同じコンテナが存在することが重要である．CPUの復元では，取得したレジスタの値をptraceでセットすることで復元している．また，Linuxカーネルに最低限必要な機能がマージされているため，カーネルを変更する必要がない．
+
+\subsection{FreeBSD VPS}
+\label{sec:FreeBSD VPS}
+FreeBSD VPS(Virtual Private System)は，FreeBSD jailのライブマイグレーションを可能にしたシステムである．FreeBSD VPSはVPSインスタンスというコンテナを作成する．CRIUはプロセスをマイグレーションしているが，FreeBSD VPSはプロセ
+スではなくVPSインスタンスごとマイグレーションしている．CPUの復元にはPCB(Process Control Block)を活用しているため，CRIUと全く異なる方法でプロセスの復元をおこなっている．
+
+\section{提案システムの実現方式}
+\label{sec:suggest}
+本章では，異種OS間でのコンテナ型仮想化におけるライブマイグレーションの実現方式を検討する．本検討では，まずLinuxとFreeBSDを対象とすることで，技術的課題の洗い出しと実現方式の有効性を確かめる．図\ref{fig:system}はLinuxとFreeBSD間におけるコンテナ型仮想化のライブマイグレーションの概要図である．本提案では，コンテナの実行状態や環境に関する情報を統一形式に変換してチェックポイントでファイルに保存し，レストアでファイルから取得した情報をOSに適した形式に変換してコンテナの実行状態や環境を復元する．\\
+　コンテナ型仮想化実行環境のマイグレーションを行うためには，プロセス実行状態のマイグレーション(プロセス・マイグレーション)とプロセス隔離状態のマイグレーション(コンテナ・マイグレーション)が必要になる．第\ref{sec:PM}，\ref{sec:CM}章では，プロセス・マイグレーションとコンテナ・マイグレーションにおける技術的課題と解決方法を示す．
+
+
+\section{プロセス・マイグレーション}
+\label{sec:PM}
+\subsection{技術的課題}
+\subsubsection{システムコールの差異}
+LinuxとFreeBSDでは共通なシステムコールは大半が同じ処理で動作している．しかし，システムコール番号やシステムコールの引数・パラメータの値が異なるため，通常であれば，LinuxバイナリはFreeBSD上で動作せず，FreeBSDバイナリはLinux上で動作しない．
+\subsubsection{ABIの差異}
+ABI(Application Binary Interface)とは，システムコールやプログラムの「呼び出し方」のことでLinuxとFreeBSDではABIが異なる．FreeBSD/x86はシステムコール引数をスタック経由で渡すのに対して，Linux/x86はシステムコール引数をレジスタ経由で渡す(表\ref{tb:argument}参照)\cite{hello}．Linux/x86では，システムコールの引数の上限が5つにが決まっており，それ以上は利用できない．関数の引数はスタック経由であるため，6つ以上の引数を持つことができる．そのため，同じプログラムが動作していても，FreeBSDとLinuxではメモリやレジスタの状態が異なる．
+
+
+\begin{table}
+  \caption{x86におけるLinuxとFreeBSDのシステムコール引数の渡し方}
+  \label{tb:argument}
+  \begin{center}
+  \begin{tabular}{|c|c|c|} \hline
+    引数 & Linux & FreeBSD \\ \hline \hline
+    第1引数 & EBX &  \\ \cline{1-2}
+    第2引数 & ECX &  \\ \cline{1-2}
+    第3引数 & EDX &  \\ \cline{1-2}
+    第4引数 & ESI & スタック \\ \cline{1-2}
+    第5引数 & EDI &  \\ \cline{1-2}
+    第6引数 & × &  \\ \hline
+  \end{tabular}
+\end{center}
+\end{table}
+
+\subsubsection{メモリレイアウトの差異}
+メモリレイアウトは仮想メモリ空間の領域の分け方のことである．一般的にASLR(Address Space Layout Randomization)によって，大まかな配置箇所は同じでも細かい部分が異なる．また，ASLRを無効化した場合でも，FreeBSDとLinuxではスタック領域は0x1000ズレてしまう．ズレを純粋に修正する場合には，スタック内にある全てのベースアドレス，リターンアドレスなどを見つけ出し0x1000ズラす必要がある．
+
+
+\subsection{実現手法}
+\subsubsection{システムコールの変換}
+システムコールテーブルの順番やシステムコールの引数のパラメータを変換することで，OSが異なってもシステムコールを動作させることができる．FreeBSDに関しては，Linuxエミュレータ\cite{linux-emu}というカーネル機能があり，システムコールテーブルとシステムコールの引数のパラメータを実際に変換し，FreeBSDでLinuxバイナリが実行できる．本提案では，システムコールに関する変換にはLinuxエミュレータを用いる．
+
+\subsubsection{ABIの変換}
+カーネル機能としてFreeBSDでLinuxバイナリを実行する際は引数をレジスタに入れ，LinuxでFreeBSDバイナリを実行する際は引数をスタックに入れるというような実装を行うと，異なるOSでもレジスタやユーザ空間の状態を同じにすることができる．これは上記したFreeBSDのLinuxエミュレータ機能が実現している．Linuxバイナリであれば，LinuxとFreeBSDで実行ファイルを一切変更せずに動作させることができる．本提案では，ABIの変換はLinuxエミュレータを用いることで実現する．
+
+\subsubsection{メモリレイアウトの変更機能}
+Linuxカーネルには，システムコールprctlを利用することで，メモリレイアウトをユーザプログラムから変更することができる．しかし，FreeBSDにはメモリレイアウトをユーザプログラムから変更することができる機能はない．LinuxとFreeBSDとの相互マイグレーションを実現するには，FreeBSD上でLinuxのprctlをベースにメモリレイアウトを変更できるシステムコールを作成する必要がある．また，prctlを実現することにより，ASLRにも対応することができる．
+
+\section{コンテナ・マイグレーション}
+\label{sec:CM}
+\subsection{技術的課題}
+\subsubsection{隔離機能の差異}
+第\ref{sec:container}章で述べたように，FreeBSDとLinuxではコンテナ型仮想化を実現する機能が異なる．LinuxはcgroupsとNamespace，FreeBSDはJailを用いている．隔離・制限する資源の対象や名称，値が異なるため，プロセス実行状態の隔離をそのままの状態で復元することはできない．
+
+\subsection{実現手法}
+\subsubsection{隔離機能の差異}
+FreeBSDのJailとLinuxのcgroup，Namespaceの機能の対応付けや数値の変換を行い，それぞれの機能で隔離している状態を再現できれば，解決できる．資源の隔離に関しては，FreeBSDのJailとLinuxのNamespaceの隔離状態の対応付けと相互変換を行うことで再現する．資源の制限に関しては，FreeBSD jailに対して資源の制限をつけるRCTLとLinuxのcgroupの制限状態の対応づけと相互変換を行うことで再現する．
+
+\section{実装状況}
+FreeBSDでFreeBSD VPSを用いない単純なプロセス・マイグレーションを実現した．FreeBSD上でptrace()を用いることで，レジスタの状態を取得し，procfsのmemからプロセスのユーザ空間のメモリを取得する．復元時には，プロセスをフォークしプログラムを実行開始前で停止させ，レジスタやメモリの状態を書き込むことで，計算処理の続きからプロセスを再開することができる．ただし，プロセスを動作させるために最低限必要な情報しかないため，ネットワークやファイル書き込みの状態を復元することはできない．また，FreeBSDからLinuxへ単縦なプロセス・マイグレーションも実現した．第\ref{sec:suggest}章で述べたように，Linuxバイナリを対象として，Linuxバイナリ互換機能を活用することでシステムコールとABIの差異を変換し，Linuxのprctl()を利用することでメモリレイアウトの差異を吸収することで実現した．
+
+\section{おわりに}
+本稿では，異種OS上のコンテナ型仮想化環境間でのライブマイグレーションの提案を行った．対象OSをLinuxとFreeBSDとし，異種OS間でのプロセス・マイグレーションとコンテナ・マイグレーションの検討を行った．プロセス・マイグレーションでは，システムコールやABIの差異をLinuxバイナリ互換機能を用い，メモリレイアウトの差異をprctl()のような機能をFreeBSDカーネルにも実装することで，それぞれの差異を吸収する．提案するシステムがもたらす効果はサーバ運用に関することが多く，稼働OSに依存しないシステム運用が可能になり，計算資源の活用や可用性の向上を見込める．
+
+
+
+\begin{thebibliography}{99}
+\bibitem{focus-container}
+	451 Research, "451 Research: Application containers will be a \$2.7bn market by 2020", 2017.
+\bibitem{criu}
+	CRIU Project: CRIU Main page, https://criu.org/, 2010 (accessed Novermber 1 2017).
+\bibitem{container_live}
+	A. Mirkin, A. Kuznetsov and K. Kolyshkin; Containers checkpointing and live migration, InProceedings of the 2008 Ottawa Linux Symposium, Vol. 2, 2008, pp. 85-90.
+\bibitem{efghij}
+	E.Fggg and H.Ijjj, Electrical Engineering, KKPress, 2003, 281-284.
+\end{thebibliography}
+
+\end{document}
