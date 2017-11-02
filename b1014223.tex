@@ -60,7 +60,7 @@ resource isolation can be realized.}
 また，クラウドコンピューティング実動環境では，負荷分散と可用性を実現するためにライブマ
 イグレーションが活用されている．ライブマイグレーションは，実行中のサービスを動的に別の
 マシンに移行する技術である．コンテナ型仮想化におけるライブマイグレーションも実現されて
-おり，LinuxではCRIU\cite{container_live,criu}，FreeBSDではFreeBSD VPS(Virtual Private
+おり，LinuxではCRIU\cite{criu,container_live}，FreeBSDではFreeBSD VPS(Virtual Private
  System)\cite{freebsd-vps}が実装として存在する．OS依存度が大きいコンテナ型仮想化では，
  OSの計算資源やAPI，コンテナ実現方式が異なるため，異なるOS環境間でコンテナをマイグレー
  ションすることができない．同一OS間のライブマイグレーションでは，システム全体の計算資
@@ -92,7 +92,7 @@ resource isolation can be realized.}
 
 \subsection{CRIU}
 \label{sec:CRIU}
-CRIU(Checkpoint/Restore in Userspace)は，Linux上でコンテナのマイグレーションを可能にするOSS実装である．CRIUの機能は，主にプロセス実行・隔離状態のチェックポイントを作成することとプロセス実行・隔離状態のレストアを行うことである．ライブマイグレーションは状態が移動するだけなので，マイグレーション先のマシンには同じコンテナが存在する必要がある．CPUの復元では，取得したレジスタの値をptraceでセットすることで復元している．また，Linuxカーネルに最低限必要な機能がマージされているため，カーネルを変更する必要がない．
+CRIU(Checkpoint/Restore in Userspace)は，Linux上でコンテナのマイグレーションを可能にするOSS実装である．CRIUの機能は，主にプロセス実行・隔離状態のチェックポイントを作成することとプロセス実行・隔離状態のレストアを行うことである．ライブマイグレーションは状態が移動するだけなので，マイグレーション先のマシンには同じコンテナが存在する必要がある．CPUの復元では，取得したレジスタの値をptraceでセットすることで復元している．また，Linuxカーネルに最低限必要な機能がマージされているため，カーネルの変更が必要ない．
 
 \subsection{FreeBSD VPS}
 \label{sec:FreeBSD VPS}
@@ -100,15 +100,15 @@ FreeBSD VPS(Virtual Private System)は，FreeBSD jailのマイグレーション
 
 \section{提案システムの実現方式}
 \label{sec:suggest}
-本章では，異種OS間でのコンテナ型仮想化におけるライブマイグレーションの実現方式を提案する．本研究では，LinuxとFreeBSDを対象とすることで，技術的課題の洗い出しと実現方式の有効性を確かめる．図\ref{fig:system}は，LinuxとFreeBSD間におけるコンテナ型仮想化のライブマイグレーションの概要図である．本提案では，コンテナの実行状態や環境に関する情報を統一形式に変換してチェックポイント時にファイルに保存し，レストア時にファイルから取得した情報をOSに適した形式に変換してコンテナの実行状態や環境を復元する．\\
-　コンテナ型仮想化実行環境のマイグレーションを行うためには，プロセス実行状態のマイグレーション(プロセス・マイグレーション)とプロセス隔離状態のマイグレーション(コンテナ・マイグレーション)が必要になる．第\ref{sec:PM}章，第\ref{sec:CM}章では，プロセス・マイグレーションとコンテナ・マイグレーションにおける技術的課題と解決方法を示す．
+本章では，異種OS間でのコンテナ型仮想化におけるライブマイグレーションの実現方式を提案する．本研究では，LinuxとFreeBSDを対象とする．図\ref{fig:system}は，LinuxとFreeBSD間におけるコンテナ型仮想化のライブマイグレーションの概要図である．本提案では，プロセス実行・隔離状態などの情報を統一形式に変換してチェックポイント時にファイルに保存し，レストア時にファイルから取得した情報をOSに適した形式に変換してプロセス実行・隔離状態を復元する．\\
+　コンテナ型仮想化実行環境のマイグレーションのためには，プロセス実行状態のマイグレーション(プロセス・マイグレーション)とプロセス隔離状態のマイグレーション(コンテナ・マイグレーション)が必要になる．それぞれにおける技術的課題と解決方法を第\ref{sec:PM}章，第\ref{sec:CM}章に示す．
 
 
 \section{プロセス・マイグレーションの実現}
 \label{sec:PM}
 \subsection{技術的課題}
 \subsubsection{システムコールの差異}
-LinuxとFreeBSDの共通なシステムコールの大半は同じ動作である．しかし，システムコール番号やシステムコールの引数・パラメータの値が異なる．そのため，LinuxバイナリはFreeBSD上で動作せず，FreeBSDバイナリはLinux上で動作しない．
+LinuxとFreeBSDの共通なシステムコールの大半は同じ動作である．しかし，システムコール番号やシステムコールの引数・パラメータの値が異なる．そのため，LinuxバイナリはFreeBSD上で動作せず，FreeBSDバイナリはLinux上で動作しない．\\
 　また，システムコール引数の渡し方がLinuxとFreeBSDでは異なる．FreeBSD/x86はシステムコール引数をスタック経由で渡すのに対して，Linux/x86はシステムコール引数をレジスタ経由で渡す(表\ref{tb:argument}参照)．Linux/x86では，システムコールの引数の上限が5つに決まっており，それ以上は利用できない．関数の引数はスタック経由であるため，6つ以上の引数を持つことができる．そのため，同じプログラムが動作していても，FreeBSDとLinuxではメモリやレジスタの状態が異なる．
 
 \begin{table}
@@ -133,25 +133,27 @@ LinuxとFreeBSDの共通なシステムコールの大半は同じ動作であ�
 
 \subsection{実現手法}
 \subsubsection{システムコールの変換}
-システムコール番号や引数・パラメータ値に関しては，それぞれを変換することでOSが異なってもシステムコールを動作させることができる．システムコール引数の渡し方に関しては，FreeBSD上でLinuxバイナリ実行時には引数をレジスタに入れ，Linux上でFreeBSDバイナリ実行時には引数をスタックに積むというような実装を行うと，異なるOSでもレジスタやメモリの状態を同じにすることができる．
+システムコール番号や引数・パラメータ値に関しては，それぞれを変換することでOSが異なってもシステムコールを動作させることができる．システムコール引数の渡し方に関しては，FreeBSD上でLinuxバイナリ実行時には引数をレジスタに入れ，Linux上でFreeBSDバイナリ実行時には引数をスタックに積むというような実装を行うと，異なるOSでもレジスタやメモリの状態を同じにすることができる．\\
 　FreeBSDには，Linuxバイナリ互換機能\cite{linux-emu}というカーネル機能があり，システムコール番号や引数・パラメータの変換・引数の渡し方の互換を行っている．この機能によって，Linuxバイナリであれば，LinuxとFreeBSDで実行ファイルを一切変更せずに動作させることができる．本提案では，システムコールの差異の吸収をLinuxバイナリ互換機能を用いることで実現する．
 
 \subsubsection{メモリレイアウトの変更機能}
-Linuxカーネルでは，システムコールprctlを利用することで，メモリレイアウトをユーザプログラムから変更することができる．prctlを用いると，チェックポイントのメモリマップを再現することができ，ASLRのランダムなメモリマップも再現可能である．チェックポイントのアドレス等を変更する必要がなく，保存した状態をそのままメモリに書き込むだけで復元ができる．しかし，FreeBSDにはメモリレイアウトをユーザプログラムから変更できる機能はない．LinuxとFreeBSDとの相互マイグレーションやASLRに対応してマイグレーションを実現するには，FreeBSD上でメモリレイアウトを変更できるシステムコールを作成する必要がある．
+Linuxでは，prctl()を利用することでメモリレイアウトをユーザプログラムから変更することができる．そのため，チェックポイントのメモリマップを変更せずに，0x1000番地の誤差をなくすことができる．また，ASLRのランダムなメモリマップも再現可能である．しかし，FreeBSDにはメモリレイアウトをユーザプログラムから変更できる機能はない．LinuxとFreeBSDとの相互マイグレーションやASLRに対応してマイグレーションを実現するには，FreeBSD上でメモリレイアウトを変更できるシステムコールを作成する必要がある．
 
 \section{コンテナ・マイグレーションの実現}
 \label{sec:CM}
 \subsection{技術的課題}
 \subsubsection{隔離機能の差異}
-第\ref{sec:container}章で述べたように，FreeBSDとLinuxではコンテナ型仮想化を実現する機能が異なる．LinuxはcgroupsとNamespace，FreeBSDはJailを用いている．隔離・制限する資源の対象や名称，値が異なるため，プロセス実行状態の隔離をそのままの状態で復元することはできない．
+第\ref{sec:container}章で述べたように，FreeBSDとLinuxではコンテナを実現する機能が異なる．隔離・制限する対象や名称，値が異なるため，チェックポイントの状態をそのまま復元することはできない．
 
 \begin{table}
+\vspace{-1.7em}
   \caption{プロセス制限機能対応}
+  \vspace{-1em}
   \label{tb:limit}
   \begin{center}
   \begin{tabular}{|c|c|c|} \hline
     制限機能 & Linux & FreeBSD \\ \hline \hline
-    CPUリソース & \multirow{5}{*}{cgroups} &  RCTL + cpuset(1) \\ \cline{1-1} \cline{3-3}
+    CPUリソース & \multirow{5}{*}{cgroups} &  RCTL+cpuset(1) \\ \cline{1-1} \cline{3-3}
     メモリリソース &  &  \multirow{2}{*}{RCTL} \\ \cline{1-1}
     ファイル入出力 &  &  \\ \cline{1-1} \cline{3-3}
     デバイスアクセス &  & devfs(8) \\ \cline{1-1} \cline{3-3}
@@ -159,13 +161,13 @@ Linuxカーネルでは，システムコールprctlを利用することで，�
   \end{tabular}
 \end{center}
 \end{table}
-
 \begin{table}
+  \vspace{-1em}
   \caption{プロセス隔離機能対応}
   \label{tb:isolation}
   \begin{center}
   \begin{tabular}{|c|c|c|} \hline
-    制限機能 & Linux & FreeBSD \\ \hline \hline
+    隔離機能 & Linux & FreeBSD \\ \hline \hline
     プロセス間通信 & \multirow{6}{*}{Namespace} &  \multirow{5}{*}{jail} \\ \cline{1-1}
     マウントポイント &  & \\ \cline{1-1}
     ユーザID &  &  \\ \cline{1-1}
@@ -179,18 +181,20 @@ Linuxカーネルでは，システムコールprctlを利用することで，�
 \subsection{実現手法}
 \subsubsection{隔離機能の差異}
 FreeBSDのJailとLinuxのcgroup，Namespaceの機能の対応付けや数値の変換を行い，それぞれの機能
-で隔離している状態を再現できれば，解決できる．資源の制限に関しては，FreeBSDのRCTLとLinux
+で隔離している状態を再現できれば良い．資源の制限に関しては，FreeBSDのRCTLとLinux
 のcgroupsの制限状態の対応付けと相互変換(図\ref{tb:limit}参照)を行うことで再現する．例え
-ば，CPU使用率を50\%に制限するのであれば，Linux上では
-\verb|cpu.cfs\_quota=50|と\verb|cpucfs\_period\_us=100|
-とcgroupsに設定し，FreeBSD上で\verb|jail:<jail id>:pcpu:deny=50|
-とRCTLに設定することで同じ制限にすることができる．隔離状態の対応付けに関しても図\ref{tb:isolation}の対応付けを行うことで，隔離状態を再現できる．
+ば，CPU使用率を50\%に制限するのであれば，Linux上ではcgroupsに以下を設定し，\\
+\verb|cpu.cfs\_quota=50|\\
+\verb|cpu.cfs\_period\_us=100|\\
+FreeBSD上ではRCTLに以下を設定することで\\
+\verb|jail:<jail id>:pcpu:deny=50|\\
+同じ制限にすることができる．隔離状態の対応付けに関しても図\ref{tb:isolation}の対応付けを行うことで，隔離状態を再現できる．
 
 \section{実装状況}
-FreeBSDでFreeBSD VPSを用いない単純なプロセス・マイグレーションを実現した．FreeBSD上でptrace()を用いることで，レジスタの状態を取得し，procfsのmemからプロセスのユーザ空間のメモリを取得する．復元時には，プロセスをフォークしプログラムを実行開始前で停止させ，レジスタやメモリの状態を書き込むことで，計算処理の続きからプロセスを再開することができる．ただし，プロセスを動作させるために最低限必要な情報しかないため，ネットワークやファイル書き込みの状態を復元することはできない．また，FreeBSDからLinuxへ単縦なプロセス・マイグレーションを実装している．第\ref{sec:suggest}章で述べたように，Linuxバイナリを対象として，Linuxバイナリ互換機能を活用することでシステムコールの差異を変換し，Linuxのprctl()を利用することでメモリレイアウトの差異を吸収することで実現する．
+FreeBSDでFreeBSD VPSを用いない単純なプロセス・マイグレーションを実現した．ptrace()を用いてレジスタの状態を取得し，procfsのmemからプロセスのユーザ空間のメモリを取得する．復元時には，プロセスをフォークしプログラムを実行開始前で停止させ，レジスタやメモリの状態を書き込むことで，計算処理の続きからプロセスを再開することができる．ただし，プロセスを動作させるために最低限必要な情報しかないため，ネットワークやファイル書き込みの状態を復元することはできない．また，FreeBSDからLinuxへ単縦なプロセス・マイグレーションを実装している．Linuxバイナリを対象として，Linuxバイナリ互換機能を活用することでシステムコールの差異を変換し，Linuxのprctl()を利用することでメモリレイアウトの差異を吸収することで実現する．
 
 \section{おわりに}
-本研究では，異種OS上のコンテナ型仮想化環境間でのライブマイグレーションの実現を目的としている．対象OSをLinuxとFreeBSDとし，異種OS間でのプロセス・マイグレーションとコンテナ・マイグレーションの検討を行った．プロセス・マイグレーションでは，システムコールの差異をLinuxバイナリ互換機能を用い，メモリレイアウトの差異をprctl()のような機能をFreeBSDカーネルにも実装することで，それぞれの差異を吸収する．提案するシステムは，稼働OSに依存しないシステム運用が可能になり，計算資源の活用や可用性の向上を見込める．今後の課題は，コンテナ・マイグレーションの実現，ネットワークやファイル書き込みを行うプロセスへの対応などが挙げられる．
+本研究は，異種OS間でのコンテナ型仮想化のライブマイグレーションの実現を目的としている．対象OSをLinuxとFreeBSDとし，プロセス・マイグレーションとコンテナ・マイグレーションの検討を行った．プロセス・マイグレーションでは，システムコールの差異をLinuxバイナリ互換機能を用い，メモリレイアウトの差異をprctl()を用いる．提案するシステムを用いると，稼働OSに依存しないシステム運用が可能になり，計算資源の活用や可用性の向上を見込める．今後の課題は，コンテナ・マイグレーションの実現，ネットワークやファイルを利用するプロセスへの対応などが挙げられる．
 
 
 
@@ -200,9 +204,10 @@ FreeBSDでFreeBSD VPSを用いない単純なプロセス・マイグレーシ�
 \bibitem{criu}
 	CRIU Project: CRIU Main page, https://criu.org/, 2010 (accessed Novermber 1 2017).
 \bibitem{container_live}
-	A. Mirkin, A. Kuznetsov and K. Kolyshkin; Containers checkpointing and live migration, InProceedings of the 2008 Ottawa Linux Symposium, Vol. 2, 2008, pp. 85-90.
-\bibitem{efghij}
-	E.Fggg and H.Ijjj, Electrical Engineering, KKPress, 2003, 281-284.
+	A. Mirkin, A. Kuznetsov and K. Kolyshkin: Containers checkpointing and live migration, InProceedings of the 2008 Ottawa Linux Symposium, Vol. 2, 2008, pp. 85-90.
+\bibitem{linux-emu}
+Jim Mock: Linux Binary Compatibility, https://www.freebsd.org/doc/handbook/
+linuxemu.html, 1999 (accessed November 2, 2017).
 \end{thebibliography}
 
 \end{document}
