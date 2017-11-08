@@ -22,6 +22,7 @@
 \oddsidemargin 0mm
 \evensidemargin 0mm
 
+\def\course#1{\gdef\@course{#1}}
 \addtolength{\oddsidemargin}{\suiheioffset}
 \addtolength{\evensidemargin}{\suiheioffset}
 % ヘッダあり，フッタなし
@@ -183,13 +184,13 @@ to\hsize{\hfil\box\@tempboxa\hfil}
 \def\thebibliography#1{\section*{参考文献}
   \global\def\@listi{\leftmargin\leftmargini
                \labelwidth\leftmargini \advance\labelwidth-\labelsep
-               \topsep 1pt plus 0pt minus 0pt
-               \parsep 0.0ex plus 1pt \itemsep 0.0ex plus 0pt}
+               \topsep 1pt plus 2pt minus 1pt
+               \parsep 0.25ex plus 1pt \itemsep 0.25ex plus 0pt}
   \list {[\arabic{enumi}]}{\settowidth\labelwidth{[#1]}\leftmargin\labelwidth
     \advance\leftmargin\labelsep\setlength\baselineskip{10pt}\usecounter{enumi}}
-    \def\newblock{\hskip .1em plus .1em minus -.7em}
+    \def\newblock{\hskip .11em plus .33em minus -.07em}
     \sloppy
-    \sfcode`\.=750\relax}
+    \sfcode`\.=1000\relax}
 %
 %
 % EOF
