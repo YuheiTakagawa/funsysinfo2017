@@ -22,6 +22,7 @@
 \oddsidemargin 0mm
 \evensidemargin 0mm
 
+\def\course#1{\gdef\@course{#1}}
 \addtolength{\oddsidemargin}{\suiheioffset}
 \addtolength{\evensidemargin}{\suiheioffset}
 % ヘッダあり，フッタなし
@@ -46,7 +47,7 @@
 % 表題の配置
 % 本文の始まる位置を下げたい場合には，この1.4という値を大きくすればよい。
 %\def\@maketitle{\vbox to 3.7in{\hsize\textwidth
-\def\@maketitle{\vbox to 6.5in{\hsize\textwidth
+\def\@maketitle{\vbox to 6.0in{\hsize\textwidth
 
 \linewidth\hsize
  \centering
@@ -184,9 +185,9 @@ to\hsize{\hfil\box\@tempboxa\hfil}
   \global\def\@listi{\leftmargin\leftmargini
                \labelwidth\leftmargini \advance\labelwidth-\labelsep
                \topsep 1pt plus 2pt minus 1pt
-               \parsep 0.25ex plus 1pt \itemsep 0.25ex plus 1pt}
+               \parsep 0.25ex plus 1pt \itemsep 0.25ex plus 0pt}
   \list {[\arabic{enumi}]}{\settowidth\labelwidth{[#1]}\leftmargin\labelwidth
-    \advance\leftmargin\labelsep\usecounter{enumi}}
+    \advance\leftmargin\labelsep\setlength\baselineskip{10pt}\usecounter{enumi}}
     \def\newblock{\hskip .11em plus .33em minus -.07em}
     \sloppy
     \sfcode`\.=1000\relax}
